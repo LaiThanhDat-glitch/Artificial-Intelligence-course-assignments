@@ -126,8 +126,8 @@ if __name__ == '__main__':
     execute_and_measure("1. BFS", lambda p: breadth_first(p, graph_search=True), prob_default)
     execute_and_measure("2. UCS", lambda p: uniform_cost(p, graph_search=True), prob_default)
     execute_and_measure("3. DFS", lambda p: depth_first(p, graph_search=True), prob_default)
-    execute_and_measure("4. DLS (limit=6)", lambda p: limited_depth_first(p, depth_limit=6, graph_search=True), prob_default)
-    execute_and_measure("5. IDS (limit=8)", lambda p: run_ids(p, max_depth=8), prob_default)
+    execute_and_measure("4. DLS (limit=100)", lambda p: limited_depth_first(p, depth_limit=100, graph_search=True), prob_default)
+    execute_and_measure("5. IDS (limit=100)", lambda p: run_ids(p, max_depth=100), prob_default)
 
     print("-" * 73)
     # --- Nhóm 2 thuật toán Heuristic (Greedy & A*) với h1 và h2 ---
