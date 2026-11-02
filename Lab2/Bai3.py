@@ -1,179 +1,138 @@
+import time
 from simpleai.search import (
     SearchProblem,
     breadth_first,
     uniform_cost,
     depth_first,
     limited_depth_first,
-    iterative_limited_depth_first,
     greedy,
     astar
 )
 
-# 1. Định nghĩa trạng thái Initial và Goal dưới dạng tuple của tuple (để hashable trong set/dict của SimpleAI)
-INITIAL_STATE = (
-    (2, 1, 0),
-    (3, 4, 5),
-    (7, 8, 6)
-)
+# 1. Biểu diễn trạng thái dưới dạng chuỗi (String) 9 ký tự
+# Hàng 1: 2 1 0 | Hàng 2: 3 4 5 | Hàng 3: 7 8 6
+INITIAL_STR = "210345786"
 
-GOAL_STATE = (
-    (1, 2, 3),
-    (8, 0, 4),
-    (7, 6, 5)
-)
+# Hàng 1: 1 2 3 | Hàng 2: 8 0 4 | Hàng 3: 7 6 5
+GOAL_STR    = "123804765"
 
-# Bảng tra cứu tọa độ đích (r, c) của từng số để tính nhanh Manhattan Distance
-GOAL_POSITIONS = {}
-for r in range(3):
-    for c in range(3):
-        val = GOAL_STATE[r][c]
-        if val != 0:
-            GOAL_POSITIONS[val] = (r, c)
+# Bảng các bước di chuyển hợp lệ tương ứng với từng vị trí index (0 đến 8) của ô trống '0'
+MOVES = {
+    0: [('DOWN', 3), ('RIGHT', 1)],
+    1: [('LEFT', 0), ('DOWN', 4), ('RIGHT', 2)],
+    2: [('LEFT', 1), ('DOWN', 5)],
+    3: [('UP', 0), ('DOWN', 6), ('RIGHT', 4)],
+    4: [('UP', 1), ('LEFT', 3), ('DOWN', 7), ('RIGHT', 5)],
+    5: [('UP', 2), ('LEFT', 4), ('DOWN', 8)],
+    6: [('UP', 3), ('RIGHT', 7)],
+    7: [('UP', 4), ('LEFT', 6), ('RIGHT', 8)],
+    8: [('UP', 5), ('LEFT', 7)]
+}
+
+# Tiền tính toán tọa độ đích của từng số để tra cứu Manhattan không cần tính toán lại
+GOAL_COORDS = {val: (i // 3, i % 3) for i, val in enumerate(GOAL_STR)}
+
+# Bảng tra cứu trước khoảng cách Manhattan: MANHATTAN_TABLE[kí_tự][vị_trí_index]
+MANHATTAN_TABLE = {}
+for ch in "12345678":
+    gr, gc = GOAL_COORDS[ch]
+    MANHATTAN_TABLE[ch] = [abs(idx // 3 - gr) + abs(idx % 3 - gc) for idx in range(9)]
 
 
-class EightPuzzleProblem(SearchProblem):
-    def __init__(self, initial_state=INITIAL_STATE, heuristic_type='h2'):
+# 2. Định nghĩa lớp bài toán kế thừa SearchProblem
+class FastEightPuzzle(SearchProblem):
+    def __init__(self, initial_state=INITIAL_STR, heuristic_type='h2'):
         super().__init__(initial_state=initial_state)
         self.heuristic_type = heuristic_type
 
-    # Tìm vị trí ô trống (giá trị 0)
-    def _find_blank(self, state):
-        for r in range(3):
-            for c in range(3):
-                if state[r][c] == 0:
-                    return r, c
-
-    # Các hành động có thể di chuyển ô trống: UP, DOWN, LEFT, RIGHT
     def actions(self, state):
-        r, c = self._find_blank(state)
-        valid_actions = []
-        if r > 0: valid_actions.append('UP')
-        if r < 2: valid_actions.append('DOWN')
-        if c > 0: valid_actions.append('LEFT')
-        if c < 2: valid_actions.append('RIGHT')
-        return valid_actions
+        zero_idx = state.index('0')
+        return [act for act, _ in MOVES[zero_idx]]
 
-    # Trả về ma trận mới sau khi di chuyển ô trống
     def result(self, state, action):
-        r, c = self._find_blank(state)
-        grid = [list(row) for row in state]
+        zero_idx = state.index('0')
+        target_idx = -1
+        for act, dest in MOVES[zero_idx]:
+            if act == action:
+                target_idx = dest
+                break
 
-        dr, dc = 0, 0
-        if action == 'UP':      dr = -1
-        elif action == 'DOWN':  dr = 1
-        elif action == 'LEFT':  dc = -1
-        elif action == 'RIGHT': dc = 1
-
-        nr, nc = r + dr, c + dc
-        # Hoán đổi ô trống với ô kề
-        grid[r][c], grid[nr][nc] = grid[nr][nc], grid[r][c]
-        return tuple(tuple(row) for row in grid)
+        # Hoán đổi 2 ký tự trong chuỗi
+        chars = list(state)
+        chars[zero_idx], chars[target_idx] = chars[target_idx], chars[zero_idx]
+        return "".join(chars)
 
     def is_goal(self, state):
-        return state == GOAL_STATE
+        return state == GOAL_STR
 
     def cost(self, state, action, state2):
         return 1
 
-    # Hàm Heuristic h1: Số ô đặt sai vị trí
-    def heuristic_h1(self, state):
-        misplaced = 0
-        for r in range(3):
-            for c in range(3):
-                val = state[r][c]
-                if val != 0 and val != GOAL_STATE[r][c]:
-                    misplaced += 1
-        return misplaced
-
-    # Hàm Heuristic h2: Tổng khoảng cách Manhattan |x - x*| + |y - y*|
-    def heuristic_h2(self, state):
-        dist = 0
-        for r in range(3):
-            for c in range(3):
-                val = state[r][c]
-                if val != 0:
-                    gr, gc = GOAL_POSITIONS[val]
-                    dist += abs(r - gr) + abs(c - gc)
-        return dist
-
-    # SimpleAI sẽ tự động gọi phương thức heuristic(self, state)
     def heuristic(self, state):
         if self.heuristic_type == 'h1':
-            return self.heuristic_h1(state)
-        return self.heuristic_h2(state)
+            # h1: Số ô sai vị trí so với trạng thái đích
+            return sum(1 for i in range(9) if state[i] != '0' and state[i] != GOAL_STR[i])
+        else:
+            # h2: Tổng khoảng cách Manhattan tra nhanh từ bảng
+            return sum(MANHATTAN_TABLE[ch][i] for i, ch in enumerate(state) if ch != '0')
 
 
-# In trạng thái ma trận ra màn hình
-def print_grid(state):
-    for row in state:
-        print("  " + " ".join(str(x) if x != 0 else "_" for x in row))
-    print()
-
-# Hàm tự bọc IDS có giới hạn độ sâu (depth_limit) để tránh treo máy
+# 3. Hàm chạy thuật toán IDS có chặn độ sâu lặp tối đa
 def run_ids(problem, max_depth=8):
     for depth in range(max_depth + 1):
-        result = limited_depth_first(problem, depth_limit=depth, graph_search=True)
-        if result is not None:
-            return result
+        res = limited_depth_first(problem, depth_limit=depth, graph_search=True)
+        if res is not None:
+            return res
     return None
 
+
+# 4. Hàm đo thời gian và in kết quả một dòng
+def execute_and_measure(name, func, problem):
+    t_start = time.perf_counter()
+    res = func(problem)
+    t_elapsed = (time.perf_counter() - t_start) * 1000  # đơn vị milliseconds (ms)
+
+    if res:
+        steps_str = f"{res.cost} bước"
+    else:
+        steps_str = "Không tìm thấy"
+
+    print(f"{name:<42} | {steps_str:<16} | {t_elapsed:>9.2f} ms")
+
+
+# In ma trận hiển thị trực quan
+def print_grid_str(s):
+    for i in range(0, 9, 3):
+        print("  " + " ".join(s[i+j] if s[i+j] != '0' else "_" for j in range(3)))
+    print()
+
+
+# 5. Khối điều khiển chính
 if __name__ == '__main__':
     print("Trạng thái bắt đầu:")
-    print_grid(INITIAL_STATE)
+    print_grid_str(INITIAL_STR)
     print("Trạng thái đích:")
-    print_grid(GOAL_STATE)
+    print_grid_str(GOAL_STR)
 
-    # 1. Nhóm 5 thuật toán cơ bản (Uninformed Search)
-    base_problem = EightPuzzleProblem(heuristic_type='h2')
+    prob_default = FastEightPuzzle(heuristic_type='h2')
+    prob_h1 = FastEightPuzzle(heuristic_type='h1')
+    prob_h2 = FastEightPuzzle(heuristic_type='h2')
 
-    print("=================== 5 THUẬT TOÁN CƠ BẢN ===================")
-    # Với DLS, giới hạn độ sâu được đặt là 6 để quan sát hành vi cắt tỉa
-    algos_uninformed = [
-        ("1. Breadth-First Search (BFS)", lambda p: breadth_first(p, graph_search=True)),
-        ("2. Uniform-Cost Search (UCS)", lambda p: uniform_cost(p, graph_search=True)),
-        ("3. Depth-First Search (DFS)", lambda p: depth_first(p, graph_search=True)),
-        ("4. Depth-Limited Search (DLS, limit=6)", lambda p: limited_depth_first(p, depth_limit=6, graph_search=True)),
-        ("5. Iterative Deepening Search (IDS, limit=8)", lambda p: run_ids(p, max_depth=8))
-    ]
+    print("=" * 73)
+    print(f"{'Thuật toán':<42} | {'Kết quả':<16} | {'Thời gian':>12}")
+    print("=" * 73)
 
-    for name, run_algo in algos_uninformed:
-        print(f"\n--- Đang chạy: {name} ---")
-        try:
-            res = run_algo(base_problem)
-            if res:
-                print(f"-> Số bước: {res.cost}")
-                print(f"-> Chuỗi hành động: {res.path()}")
-            else:
-                print("-> Không tìm thấy nghiệm (Cutoff / No Solution)")
-        except RecursionError:
-            print("-> Lỗi vượt giới hạn đệ quy bộ nhớ.")
+    # --- Nhóm 5 thuật toán cơ bản (Uninformed Search) ---
+    execute_and_measure("1. BFS", lambda p: breadth_first(p, graph_search=True), prob_default)
+    execute_and_measure("2. UCS", lambda p: uniform_cost(p, graph_search=True), prob_default)
+    execute_and_measure("3. DFS", lambda p: depth_first(p, graph_search=True), prob_default)
+    execute_and_measure("4. DLS (limit=6)", lambda p: limited_depth_first(p, depth_limit=6, graph_search=True), prob_default)
+    execute_and_measure("5. IDS (limit=8)", lambda p: run_ids(p, max_depth=8), prob_default)
 
-    # 2. Nhóm 2 thuật toán tìm kiếm có thông tin (Heuristic: h1 & h2)
-    print("\n=================== 2 THUẬT TOÁN HEURISTIC ===================")
-    
-    # Chạy h2 trước (Manhattan mạnh hơn rất nhiều so với h1, ra kết quả nhanh hơn)
-    for h_type in ['h2', 'h1']:
-        h_desc = "Khoảng cách Manhattan (h2)" if h_type == 'h2' else "Sai vị trí (h1)"
-        prob = EightPuzzleProblem(heuristic_type=h_type)
-        
-        # 6. Greedy Best-First Search
-        print(f"\n[6. Greedy Best-First Search] Sử dụng Heuristic: {h_desc}")
-        print("  -> Đang tìm kiếm...")
-        res_greedy = greedy(prob, graph_search=True)
-        if res_greedy:
-            print(f"  -> Hoàn thành! Số bước: {res_greedy.cost}")
-            actions = [act for act, _ in res_greedy.path() if act]
-            print(f"  -> Các bước di chuyển: {' -> '.join(actions)}")
-        else:
-            print("  -> Không tìm thấy lời giải.")
-        
-        # 7. A* Search
-        print(f"\n[7. A* Search] Sử dụng Heuristic: {h_desc}")
-        print("  -> Đang tìm kiếm...")
-        res_astar = astar(prob, graph_search=True)
-        if res_astar:
-            print(f"  -> Hoàn thành! Số bước tối ưu: {res_astar.cost}")
-            actions = [act for act, _ in res_astar.path() if act]
-            print(f"  -> Các bước di chuyển: {' -> '.join(actions)}")
-        else:
-            print("  -> Không tìm thấy lời giải.")
+    print("-" * 73)
+    # --- Nhóm 2 thuật toán Heuristic (Greedy & A*) với h1 và h2 ---
+    execute_and_measure("6. Greedy (h1: Misplaced)", lambda p: greedy(p, graph_search=True), prob_h1)
+    execute_and_measure("6. Greedy (h2: Manhattan)", lambda p: greedy(p, graph_search=True), prob_h2)
+    execute_and_measure("7. A* (h1: Misplaced)", lambda p: astar(p, graph_search=True), prob_h1)
+    execute_and_measure("7. A* (h2: Manhattan)", lambda p: astar(p, graph_search=True), prob_h2)
+    print("=" * 73)
